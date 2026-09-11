@@ -1426,6 +1426,9 @@ const mountInitialEditor = async () => {
         vscode.postMessage({ type: 'openLink', href });
       },
       onSelectionChange: (state: any) => selectionMenuController.update(state),
+      onSendToTerminalContext: (context: { mode: 'live' | 'source'; from?: number; to?: number; text?: string }) => {
+        vscode.postMessage({ type: 'sendToTerminalContext', ...context });
+      },
       onRequestDiagnosticSuggestions: requestDiagnosticSuggestions,
       onViewportChange: () => scheduleViewPositionCapture(),
       onRequestGitBlame: requestGitBlameForLine,

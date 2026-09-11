@@ -42,9 +42,14 @@ import {
   hasExternalSpellDiagnostics,
   MEO_SPELL_DIAGNOSTIC_SOURCE
 } from '../spell/spellDiagnostics';
+import type { SendToTerminalContext, SelectionRange } from '../shared/sendToTerminal';
 
 export type EditorMode = 'live' | 'source';
 export type ExportFormat = 'html' | 'pdf';
+
+const SEND_TO_TERMINAL_IN_WORKSPACE_CONTEXT_KEY = 'markdownEditorOptimized.sendTo.inWorkspace';
+const SEND_TO_TERMINAL_HAS_SELECTION_CONTEXT_KEY = 'markdownEditorOptimized.sendTo.hasSelection';
+const SEND_TO_TERMINAL_SELECTION_MAPS_CONTEXT_KEY = 'markdownEditorOptimized.sendTo.selectionMapsToMarkdown';
 
 type FindOptions = {
   wholeWord: boolean;
@@ -324,6 +329,14 @@ type DiagnosticsChangedMessage = {
   diagnostics: SerializedDiagnostic[];
 };
 
+type SendToTerminalContextMessage = {
+  type: 'sendToTerminalContext';
+  mode: EditorMode;
+  from?: number;
+  to?: number;
+  text?: string;
+};
+
 type WebviewMessage =
   | ApplyChangesMessage
   | DraftChangedMessage
@@ -350,6 +363,7 @@ type WebviewMessage =
   | OpenGitWorktreeForLineMessage
   | SaveImageFromClipboardMessage
   | RequestDiagnosticSuggestionsMessage
+  | SendToTerminalContextMessage
   | { type: 'ready' };
 
 type RefreshGitBaselineOptions = {
@@ -411,6 +425,8 @@ export type PanelSession = {
   refreshGitBaseline: (options?: RefreshGitBaselineOptions) => void;
   refreshSpellDiagnostics: () => void;
   getGitRepoRoot: () => string | null;
+  getSendToTerminalContext: () => SendToTerminalContext;
+  publishSendToTerminalContext: () => Promise<void>;
 };
 
 export type PanelSessionController = {
@@ -458,11 +474,66 @@ export function createPanelSessionController(params: PanelSessionControllerParam
   let lastSavedRememberedLine: number | null = null;
   let lastSavedRememberedLineOffset = 0;
   let disposed = false;
+  let sendToTerminalSelection: SelectionRange | null = null;
+  let sendToTerminalSelectionMapsToMarkdown = false;
   let spellCheckGeneration = 0;
   let pendingSpellCheckTimer: ReturnType<typeof setTimeout> | null = null;
   const workspaceRoot = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath;
   const gitDocumentState = new GitDocumentState(documentUri.fsPath, workspaceRoot);
   const pendingExportSnapshots = new Map<string, PendingExportSnapshot>();
+
+  const getCurrentMarkdownText = (): string => (pendingDraftText ?? document.getText()).replace(/\r\n/g, '\n');
+
+  const getWorkspaceFolderPaths = (): string[] => (
+    vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? []
+  );
+
+  const hasWorkspaceFolder = (): boolean => vscode.workspace.getWorkspaceFolder(documentUri) !== undefined;
+
+  const publishSendToTerminalContext = async (): Promise<void> => {
+    await vscode.commands.executeCommand(
+      'setContext',
+      SEND_TO_TERMINAL_IN_WORKSPACE_CONTEXT_KEY,
+      hasWorkspaceFolder()
+    );
+    await vscode.commands.executeCommand(
+      'setContext',
+      SEND_TO_TERMINAL_HAS_SELECTION_CONTEXT_KEY,
+      sendToTerminalSelection !== null
+    );
+    await vscode.commands.executeCommand(
+      'setContext',
+      SEND_TO_TERMINAL_SELECTION_MAPS_CONTEXT_KEY,
+      sendToTerminalSelectionMapsToMarkdown
+    );
+  };
+
+  const clearSendToTerminalContext = async (): Promise<void> => {
+    sendToTerminalSelection = null;
+    sendToTerminalSelectionMapsToMarkdown = false;
+    await vscode.commands.executeCommand('setContext', SEND_TO_TERMINAL_IN_WORKSPACE_CONTEXT_KEY, false);
+    await vscode.commands.executeCommand('setContext', SEND_TO_TERMINAL_HAS_SELECTION_CONTEXT_KEY, false);
+    await vscode.commands.executeCommand('setContext', SEND_TO_TERMINAL_SELECTION_MAPS_CONTEXT_KEY, false);
+  };
+
+  const updateSendToTerminalContext = async (message: SendToTerminalContextMessage): Promise<void> => {
+    const currentText = getCurrentMarkdownText();
+    const hasSelection = Number.isInteger(message.from) && Number.isInteger(message.to);
+    sendToTerminalSelection = null;
+    sendToTerminalSelectionMapsToMarkdown = false;
+
+    if (hasSelection) {
+      const from = Math.max(0, Math.min(message.from as number, currentText.length));
+      const to = Math.max(0, Math.min(message.to as number, currentText.length));
+      const selection = { from: Math.min(from, to), to: Math.max(from, to) };
+      const selectedText = typeof message.text === 'string' ? message.text : '';
+      const mappedText = currentText.slice(selection.from, selection.to);
+      sendToTerminalSelection = selection;
+      sendToTerminalSelectionMapsToMarkdown = mappedText === selectedText;
+    }
+
+    await publishSendToTerminalContext();
+  };
 
   const enqueue = (task: () => Promise<void>): Promise<void> => {
     applyQueue = applyQueue.then(task, task);
@@ -1005,7 +1076,14 @@ export function createPanelSessionController(params: PanelSessionControllerParam
     rejectPendingExportSnapshots,
     refreshGitBaseline,
     refreshSpellDiagnostics: () => scheduleSpellCheck(0),
-    getGitRepoRoot: () => gitDocumentState.getRepoRoot()
+    getGitRepoRoot: () => gitDocumentState.getRepoRoot(),
+    getSendToTerminalContext: () => ({
+      documentPath: documentUri.fsPath,
+      workspaceFolders: getWorkspaceFolderPaths(),
+      text: getCurrentMarkdownText(),
+      selection: sendToTerminalSelection
+    }),
+    publishSendToTerminalContext
   };
 
   const handleMessage = async (raw: WebviewMessage): Promise<void> => {
@@ -1022,6 +1100,9 @@ export function createPanelSessionController(params: PanelSessionControllerParam
         return;
       case 'setMode':
         mode = raw.mode;
+        return;
+      case 'sendToTerminalContext':
+        await updateSendToTerminalContext(raw);
         return;
       case 'setLineNumbers': {
         const visible = raw.visible ?? raw.enabled;
@@ -1322,6 +1403,7 @@ export function createPanelSessionController(params: PanelSessionControllerParam
     }), 'disposeDraftRecovery');
 
     rejectPendingExportSnapshots(new Error('The editor was closed before export completed.'));
+    runBackground(clearSendToTerminalContext(), 'clearSendToTerminalContext.dispose');
     messageSubscription.dispose();
     documentChangeSubscription.dispose();
     documentSaveSubscription.dispose();

@@ -168,6 +168,7 @@ export function createEditor({
   onApplyChanges,
   onOpenLink,
   onSelectionChange,
+  onSendToTerminalContext,
   onRequestDiagnosticSuggestions,
   onViewportChange,
   onRequestGitBlame,
@@ -1046,6 +1047,12 @@ export function createEditor({
     });
   };
 
+  const clearSendToTerminalContext = () => {
+    if (typeof onSendToTerminalContext === 'function') {
+      onSendToTerminalContext({ mode: currentMode });
+    }
+  };
+
   const emitSelectionChange = () => {
     if (!view || typeof onSelectionChange !== 'function') {
       return;
@@ -1053,6 +1060,7 @@ export function createEditor({
 
     const activeTableInput = getActiveTableInput();
     if (activeTableInput) {
+      clearSendToTerminalContext();
       publishSelectionMenu(getActiveTableSelectionState(activeTableInput) ?? { visible: false });
       return;
     }
@@ -1063,6 +1071,7 @@ export function createEditor({
 
     const selection = view.state.selection.main;
     if (selection.empty) {
+      clearSendToTerminalContext();
       publishSelectionMenu({ visible: false });
       return;
     }
@@ -1070,14 +1079,18 @@ export function createEditor({
     const from = Math.min(selection.from, selection.to);
     const to = Math.max(selection.from, selection.to);
     if (isSearchMatchSelection(from, to)) {
+      clearSendToTerminalContext();
       publishSelectionMenu({ visible: false });
       return;
     }
 
     if (!isRegularInlineSelection(view.state, from, to)) {
+      clearSendToTerminalContext();
       publishSelectionMenu({ visible: false });
       return;
     }
+
+    emitSendToTerminalContext();
 
     const align = isDiagnosticSelectionRange(from, to) ? 'start' : undefined;
     const nativeAnchor = resolveNativeSelectionAnchor();
@@ -1115,6 +1128,29 @@ export function createEditor({
       anchorY,
       anchorBottomY
     });
+  };
+
+  const emitSendToTerminalContext = () => {
+    if (!view || typeof onSendToTerminalContext !== 'function') {
+      return;
+    }
+
+    const activeTableInput = getActiveTableInput();
+    if (activeTableInput) {
+      onSendToTerminalContext({ mode: currentMode });
+      return;
+    }
+
+    const selection = view.state.selection.main;
+    if (selection.empty) {
+      onSendToTerminalContext({ mode: currentMode });
+      return;
+    }
+
+    const from = Math.min(selection.from, selection.to);
+    const to = Math.max(selection.from, selection.to);
+    const text = view.state.doc.sliceString(from, to);
+    onSendToTerminalContext({ mode: currentMode, from, to, text });
   };
 
   const diagnosticKey = (diagnostic: EditorDiagnostic): string => [
@@ -1670,6 +1706,7 @@ export function createEditor({
           return false;
         },
         contextmenu(event, view) {
+          emitSendToTerminalContext();
           if (!requestDiagnosticSuggestionsFromPointer(event, view)) {
             return false;
           }

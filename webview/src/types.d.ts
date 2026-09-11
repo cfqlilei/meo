@@ -24,6 +24,7 @@ type WebviewMessage =
   | { type: 'resolveWikiLinks'; requestId: string; targets: string[] }
   | { type: 'resolveLocalLinks'; requestId: string; targets: string[] }
   | { type: 'requestDiagnosticSuggestions'; requestId: string; from: number; to: number; message: string; source?: string; code?: string }
+  | { type: 'sendToTerminalContext'; mode: 'live' | 'source'; from?: number; to?: number; text?: string }
   | { type: 'saveDocument' }
   | { type: 'requestReload' }
   | { type: 'exportDocument'; format: 'html' | 'pdf' }

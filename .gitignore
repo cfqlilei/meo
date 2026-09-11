@@ -6,6 +6,7 @@ out
 webview/dist
 bun.lockb
 *.vsix
+release/
 releases/
 tests/
 assets/

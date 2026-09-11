@@ -78,6 +78,11 @@ import {
   showTimedWarningMessageWithItems
 } from './shared/timedUi';
 import type { ExportStyleEnvironment } from './export/runtime';
+import {
+  buildSendToTerminalPayload,
+  resolveSendToTerminalContext,
+  type SendToTerminalPayloadKind
+} from './shared/sendToTerminal';
 
 const VIEW_TYPE = 'markdownEditorOptimized.editor';
 const ACTIVE_EDITOR_CONTEXT_KEY = 'markdownEditorOptimized.activeEditor';
@@ -459,6 +464,21 @@ export function activate(context: vscode.ExtensionContext): void {
       await provider.exportActiveDocument('pdf');
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('markdownEditorOptimized.sendRelativePathToTerminal', async () => {
+      await provider.sendActiveDocumentContextToTerminal('relativePath');
+    }),
+    vscode.commands.registerCommand('markdownEditorOptimized.sendLineReferenceToTerminal', async () => {
+      await provider.sendActiveDocumentContextToTerminal('lineReference');
+    }),
+    vscode.commands.registerCommand('markdownEditorOptimized.sendPathToTerminal', async () => {
+      await provider.sendActiveDocumentContextToTerminal('path');
+    }),
+    vscode.commands.registerCommand('markdownEditorOptimized.sendTextToTerminal', async () => {
+      await provider.sendActiveDocumentContextToTerminal('text');
+    })
+  );
 }
 
 class MarkdownWebviewProvider implements vscode.CustomTextEditorProvider {
@@ -686,6 +706,7 @@ class MarkdownWebviewProvider implements vscode.CustomTextEditorProvider {
       setOutlineVisible: (visible) => this.setOutlineVisible(visible),
       onPanelActivated: (activePanel) => {
         this.lastActivePanel = activePanel;
+        void this.publishActiveSendToTerminalContext();
       },
       onPanelViewStateChanged: () => {
         this.updateActiveEditorContext();
@@ -697,6 +718,7 @@ class MarkdownWebviewProvider implements vscode.CustomTextEditorProvider {
           this.lastActivePanel = null;
         }
         this.updateActiveEditorContext();
+        void this.publishActiveSendToTerminalContext();
       }
     });
 
@@ -704,6 +726,7 @@ class MarkdownWebviewProvider implements vscode.CustomTextEditorProvider {
     this.panelSessions.set(panel, controller.session);
     if (panel.active) {
       this.lastActivePanel = panel;
+      void this.publishActiveSendToTerminalContext();
     }
     this.updateActiveEditorContext();
   }
@@ -768,6 +791,40 @@ class MarkdownWebviewProvider implements vscode.CustomTextEditorProvider {
 
     const first = this.panelSessions.values().next();
     return first.done ? null : first.value;
+  }
+
+  async sendActiveDocumentContextToTerminal(kind: SendToTerminalPayloadKind): Promise<void> {
+    const session = this.getActiveSession();
+    if (!session || session.documentUri.scheme !== 'file') {
+      return;
+    }
+
+    const payload = buildSendToTerminalPayload(
+      kind,
+      resolveSendToTerminalContext(session.getSendToTerminalContext())
+    );
+    if (payload === null) {
+      return;
+    }
+
+    const terminal = vscode.window.activeTerminal;
+    if (!terminal) {
+      return;
+    }
+
+    terminal.show(false);
+    terminal.sendText(payload, false);
+  }
+
+  private async publishActiveSendToTerminalContext(): Promise<void> {
+    const session = this.getActiveSession();
+    if (!session) {
+      await vscode.commands.executeCommand('setContext', 'markdownEditorOptimized.sendTo.inWorkspace', false);
+      await vscode.commands.executeCommand('setContext', 'markdownEditorOptimized.sendTo.hasSelection', false);
+      await vscode.commands.executeCommand('setContext', 'markdownEditorOptimized.sendTo.selectionMapsToMarkdown', false);
+      return;
+    }
+    await session.publishSendToTerminalContext();
   }
 
   private async exportSessionDocument(session: PanelSession, format: ExportFormat): Promise<void> {
