@@ -1,6 +1,7 @@
 # Markdown Editor Optimized (MEO)
 ---
-## 0.1.27
+## v0.1.27 (2026.09.12)
+- Added editor context actions for sending paths, line references, and selected text to the terminal
 - Added a shared read only toggle
 - Added the theme color to customize the active-line highlight
 - Added visual multiline editing to live table cells
