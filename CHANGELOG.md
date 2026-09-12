@@ -1,5 +1,9 @@
 # Markdown Editor Optimized (MEO)
 ---
+## v0.1.28 (2026.09.12)
+- 优化:
+  1. Replaced terminal quote escaping with spacing-preserving text handling for send-to-terminal commands.
+
 ## v0.1.27 (2026.09.12)
 - Added editor context actions for sending paths, line references, and selected text to the terminal
 - Added a shared read only toggle
