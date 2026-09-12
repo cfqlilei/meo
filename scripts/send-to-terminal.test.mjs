@@ -28,7 +28,7 @@ describe('send to terminal payloads', () => {
     assert.equal(buildMarkdownFence('a ``` b ```` c'), '`````');
   });
 
-  test('builds text payload with quoted line reference and fenced selected text', () => {
+  test('builds text payload with padded line reference and fenced selected text', () => {
     const context = resolveSendToTerminalContext({
       documentPath: '/repo/CLAUDE.md',
       workspaceFolders: ['/repo'],
@@ -36,10 +36,10 @@ describe('send to terminal payloads', () => {
       selection: { from: 4, to: 9 }
     });
 
-    assert.equal(buildSendToTerminalPayload('text', context), '"CLAUDE.md(起止行号:2-2)"\n````\n二 ```\n````');
+    assert.equal(buildSendToTerminalPayload('text', context), ' CLAUDE.md(起止行号:2-2) \n````\n二 ```\n````');
   });
 
-  test('builds quoted absolute path payload', () => {
+  test('builds padded absolute path payload', () => {
     const context = resolveSendToTerminalContext({
       documentPath: '/repo/CLAUDE.md',
       workspaceFolders: [],
@@ -47,7 +47,7 @@ describe('send to terminal payloads', () => {
       selection: null
     });
 
-    assert.equal(buildSendToTerminalPayload('path', context), '"/repo/CLAUDE.md"');
+    assert.equal(buildSendToTerminalPayload('path', context), ' /repo/CLAUDE.md ');
     assert.equal(buildSendToTerminalPayload('relativePath', context), null);
   });
 });

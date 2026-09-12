@@ -43,20 +43,20 @@ export function buildSendToTerminalPayload(
   context: ResolvedSendToTerminalContext
 ): string | null {
   if (kind === 'relativePath') {
-    return context.relativePath === null ? null : quoteForTerminal(context.relativePath);
+    return context.relativePath === null ? null : padForTerminal(context.relativePath);
   }
   if (kind === 'path') {
-    return quoteForTerminal(context.absolutePath);
+    return padForTerminal(context.absolutePath);
   }
   if (kind === 'lineReference') {
-    return context.lineReference === null ? null : quoteForTerminal(context.lineReference);
+    return context.lineReference === null ? null : padForTerminal(context.lineReference);
   }
   if (context.lineReference === null || context.selectedText === null) {
     return null;
   }
 
   const fence = buildMarkdownFence(context.selectedText);
-  return `${quoteForTerminal(context.lineReference)}\n${fence}\n${context.selectedText}\n${fence}`;
+  return `${padForTerminal(context.lineReference)}\n${fence}\n${context.selectedText}\n${fence}`;
 }
 
 export function resolveWorkspaceRelativePath(documentPath: string, workspaceFolders: string[]): string | null {
@@ -122,6 +122,6 @@ function lineNumberAtOffset(text: string, offset: number): number {
   return line;
 }
 
-function quoteForTerminal(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`;
+function padForTerminal(value: string): string {
+  return ` ${value} `;
 }
